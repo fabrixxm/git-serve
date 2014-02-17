@@ -160,7 +160,7 @@ class GITServePages(object):
 		<body>
 		<header><strong>~{repo_name}</strong> - <a href="/">home</a> - <a href="/browse/">browse</a> - <a href="/history/">history</a><a href="/refs/" class='ref'>{ref}</a></header>
 		<article>{content}</article>
-		<footer>clone this repo: <code>git clone http://{host}:{port}{repo_name}</code></footer>
+		<footer>clone this repo: <code>git clone http://{host}:{port}/{repo_name}</code></footer>
 		</body>
 		""".format(
 			repo_name = self.request.repo_name,
