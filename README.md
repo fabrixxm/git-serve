@@ -10,4 +10,4 @@ Use
     
 Port defaults to 8001
     
-The current repo will be avaiable to clone at http://<your ip>:<port>/<your repo folder name>/
+The current repo will be avaiable to clone at http://[your ip]:[port]/[your repo folder name]/
