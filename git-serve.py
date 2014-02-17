@@ -149,7 +149,7 @@ class GITServePages(object):
 		style=u"""body{padding:0px;margin:0px;font-family:sans-serif;background-color:#eee}article{width:90%;margin:0px auto}header{padding:20px 5%;background-color:#404e61;color:#fff}header>a{color:#DDD}header>a:hover{color:#fff}footer{padding:10px 5%;background-color:#152a47;color:#fff}
 		li.dir{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAABTVBMVEUAABRISEhJSUlGTVNMTExRUVFWVlZbW1tfX180ZaQ0ZaU0ZqQ1ZqQ1ZqU2ZqQ2ZqU2Z6U3Z6U4Z6Q3aKY4aKU5aKU6aaVlZWVBbaZqampsbGxubm5FeLJzc3N0dHR4eHh5eXl6enpQg7qAgIB4hpeMjIyNjY1tnM5unM5wns+ZmZmbm5t4o9J5pNN6pNN6pdF+ptOhoaF+p9SioqKBqNWkpKSlpaSlpaWEq9WFq9Wnp6eHrdepqamJrtiqqqqrq6uLsNiLsNmsrKytra2OstmOstqurq6Qs9qRtNqRtNuwsLCRtduStduVttyUt9yVt9yzs7OWuNy0tLSZud2Zut2but22tracut23t7e5ubm7u7u9vb2pxOLBwcDExMTFxcWxyeXHx8fJycm2zea3z+e4z+e4z+i+0um+0+m+0+q+1Oq/1OrB1erE1+vG2Ow1AMXeAAAAAXRSTlMAQObYZgAAALtJREFUGNNjYEAHigpggBCQT0qMj4sLkoMLyMZ7OdvbOampqaqqKksBBaRjneyszE1NncIio4wlgQKS0RL8IMADBJycnMIM4hG8mdnZWVlZGSCQxsXAEcCT4+np7e0DAoEp3AzsbgK5fjDgkczLwGbDlxcCAf6ujqm8DKxmgumhwb4+7i621tYOCbwMLIYiMSZ6UGAUzsvAqC1kqaEOBZoWvAxMWqIGOjCgqw9UoSKmhAAy/AzMnMiAhwEAATQqrYcDKI4AAAAASUVORK5CYII=);}
 		li.file{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAP1BMVEUAAACBgYGVlZWZmZnExMTFxcXGxsbHx8fIyMjq6urr6+vs7Ozt7eXt7ebt7e3u7u7v7+/w8PDx8fHy8vL///9IyRz5AAAAAXRSTlMAQObYZgAAAGdJREFUGNNlj0sWgCAMA0FFPtUCxfufVahQeZrlTLKIWvUUVaOvKZoBeB9CAMDcgd+M2WusgKYBMQ4Q2E8N3uMBb6PpGE8BvI8pJQFtb51zAthnIuoAH09UBsBWyFQG+HxZ5reL+ucG2iMI0Xh/di8AAAAASUVORK5CYII=);}
-		header .ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px}pre.wrap{white-space:pre-wrap}
+		header .ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px;white-space:pre-wrap}
 		"""
 		if self.use_pygments:
 			style +=  self.formatter.get_style_defs()
@@ -253,7 +253,7 @@ class GITServePages(object):
 		except CalledProcessError:
 			return None
 		txt = u"<h3>{0} ({1})</h3>".format(path, ref)
-		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: <a href='/diff/{1}?ref={0}..{2}'>previus</a> - <a href='/diff/{1}?ref=HEAD..{0}'>HEAD</a></p>".format(ref,path, logs[0]) 
+		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: <a href='/diff/{1}?ref={2}..{0}'>previus</a> - <a href='/diff/{1}?ref={0}..HEAD'>HEAD</a></p>".format(ref,path, logs[0]) 
 		txt += self._hi(text, path)
 		
 		return (200, "text/html", self._tpl(txt))
