@@ -17,6 +17,8 @@ from subprocess import check_output,CalledProcessError
 import re
 import cgi
 import hashlib
+import tempfile
+import atexit
 
 if os.name == "nt":
 	GIT_HTTP_BACKEND = "C:\\Program Files (x86)\\Git\\libexec\\git-core\\git-http-backend.exe"
@@ -54,14 +56,19 @@ class GIT:
 	@classmethod
 	def branch(cls, *args):
 		r = cls._do("branch", *args).strip()
-		return [b.strip("\n\r *") for b in r.split("\n") if b.strip("\n\r *")!=""]
+		return [b.strip("\n\r *") for b in r.split("\n") if b.strip("\n\r *")!="" ]
+	@classmethod
+	def branch_current(cls, *args):
+		r = cls._do("branch", *args).strip()
+		return ''.join( [b.strip("\n\r *") for b in r.split("\n") if b.strip().startswith("*")] )
+
 	@classmethod		
 	def tag(cls, *args):
 		r = cls._do("tag", *args).strip()
 		return [b.strip("\n\r *") for b in r.split("\n") if b.strip("\n\r *")!=""]
 	@classmethod
-	def files(cls, base="", _ref=None):
-		ref = _ref or cls.current_ref
+	def files(cls, base="", ref=None):
+		ref = ref or cls.current_ref
 		files = cls._do("ls-tree", "--name-only", ref, base).strip()
 		dirs = cls._do("ls-tree", "-d","--name-only", ref, base).strip()
 
@@ -75,21 +82,25 @@ class GIT:
 		
 		return sorted(dirs), sorted(files)
 	@classmethod
-	def show(cls, file, _ref):
-		ref = _ref or cls.current_ref
+	def show(cls, file, ref):
+		ref = ref or cls.current_ref
 		return cls._do("show", ref+":"+file)
 	@classmethod
-	def log(cls, file="", _ref=None, n=40):
-		ref = _ref or cls.current_ref
+	def log(cls, file="", ref=None, n=40):
+		ref = ref or cls.current_ref
 		r = cls._do("log", '-'+str(n) ,'--pretty=format:%h|%x09|%an|%x09|%ad|%x09|%s|%x09|%ae|%x09|%d', '--date=relative', ref, "--",file)
 		r = r.strip(" \n\r")
+		if r==u"":
+			return []
 		logs = [ [r.strip() for r in l.strip(" ").split("|\t|")] for l in r.split("\n") ]
 		return logs
 	@classmethod
 	def diff_tree(cls,ref=None):
-		_ref = ref or cls.current_ref
-		r = cls._do("diff-tree", "--no-commit-id", "--name-status", "-r" , _ref)
-		r = [ l.strip().split("\t") for l in r.strip(" \n\r").split("\n") ]
+		ref = ref or cls.current_ref
+		r = cls._do("diff-tree", "--no-commit-id", "--name-status", "-r" , ref).strip(" \n\r")
+		if r==u"":
+			return []
+		r = [ l.strip().split("\t") for l in r.split("\n") ]
 		return r
 	@classmethod
 	def diff(cls, path="", ref1=None, ref2=None):
@@ -110,9 +121,23 @@ class GITServePages(object):
 	def __init__(self):
 		self.use_md = not markdown is None
 		self.use_pygments = not highlight is None
-		print("git serve use markdown:{0}, pygments:{1}".format(self.use_md, self.use_pygments))
+		if self.use_md:
+			print("[#] markdown ", end=" ")
+		else:
+			print("[ ] markdown ", end=" ")
+		if self.use_pygments:
+			print("[#] pygments ", end=" ")
+		else:
+			print("[ ] pygments ", end=" ")
+		print()
+		
 		if self.use_pygments:
 			self.formatter = HtmlFormatter(linenos=False, cssclass="source")
+		
+		self.tmpdir = tempfile.mkdtemp()
+		print ("temp dir: {0}".format(self.tmpdir))
+		
+		
 		self.routes = {
 			re.compile(r'^/$') : self.index,
 			re.compile(r'^/refs/$') : self.refs,
@@ -121,10 +146,22 @@ class GITServePages(object):
 			re.compile(r'^/history(?P<path>.*)$') : self.history,
 			re.compile(r'^/commit/(?P<ref>[a-zA-Z0-9]*)/$') : self.commit,
 			re.compile(r'^/diff(?P<path>.*)$') : self.diff,
+			re.compile(r'^/wiki/(?P<path>.*)$') : self.wiki,
 		}
 		
 	def route(self, request):
 		self.request = request
+		self.method = request.command
+
+		postvars={}
+		if self.method=="POST":
+			ctype, pdict = cgi.parse_header(request.headers.getheader('content-type'))
+			if ctype == 'multipart/form-data':
+				postvars = cgi.parse_multipart(request.rfile, pdict)
+			elif ctype == 'application/x-www-form-urlencoded':
+				length = int(request.headers.getheader('content-length'))
+				postvars = cgi.parse_qs(request.rfile.read(length), keep_blank_values=1)
+		self.post = postvars
 		
 		path = request.path
 		query = ""
@@ -147,17 +184,18 @@ class GITServePages(object):
 			return view(**kwargs)
 		return None
 	
-	def _tpl(self, text):
+	def _tpl(self, text, title=""):
 		style=u"""body{padding:0px;margin:0px;font-family:sans-serif;background-color:#eee}article{width:90%;margin:0px auto}header{padding:20px 5%;background-color:#404e61;color:#fff}header>a{color:#DDD}header>a:hover{color:#fff}footer{margin:2em 0 0;padding:10px 5%;background-color:#152a47;color:#fff}
 		li.dir{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAABTVBMVEUAABRISEhJSUlGTVNMTExRUVFWVlZbW1tfX180ZaQ0ZaU0ZqQ1ZqQ1ZqU2ZqQ2ZqU2Z6U3Z6U4Z6Q3aKY4aKU5aKU6aaVlZWVBbaZqampsbGxubm5FeLJzc3N0dHR4eHh5eXl6enpQg7qAgIB4hpeMjIyNjY1tnM5unM5wns+ZmZmbm5t4o9J5pNN6pNN6pdF+ptOhoaF+p9SioqKBqNWkpKSlpaSlpaWEq9WFq9Wnp6eHrdepqamJrtiqqqqrq6uLsNiLsNmsrKytra2OstmOstqurq6Qs9qRtNqRtNuwsLCRtduStduVttyUt9yVt9yzs7OWuNy0tLSZud2Zut2but22tracut23t7e5ubm7u7u9vb2pxOLBwcDExMTFxcWxyeXHx8fJycm2zea3z+e4z+e4z+i+0um+0+m+0+q+1Oq/1OrB1erE1+vG2Ow1AMXeAAAAAXRSTlMAQObYZgAAALtJREFUGNNjYEAHigpggBCQT0qMj4sLkoMLyMZ7OdvbOampqaqqKksBBaRjneyszE1NncIio4wlgQKS0RL8IMADBJycnMIM4hG8mdnZWVlZGSCQxsXAEcCT4+np7e0DAoEp3AzsbgK5fjDgkczLwGbDlxcCAf6ujqm8DKxmgumhwb4+7i621tYOCbwMLIYiMSZ6UGAUzsvAqC1kqaEOBZoWvAxMWqIGOjCgqw9UoSKmhAAy/AzMnMiAhwEAATQqrYcDKI4AAAAASUVORK5CYII=);}
 		li.file{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAP1BMVEUAAACBgYGVlZWZmZnExMTFxcXGxsbHx8fIyMjq6urr6+vs7Ozt7eXt7ebt7e3u7u7v7+/w8PDx8fHy8vL///9IyRz5AAAAAXRSTlMAQObYZgAAAGdJREFUGNNlj0sWgCAMA0FFPtUCxfufVahQeZrlTLKIWvUUVaOvKZoBeB9CAMDcgd+M2WusgKYBMQ4Q2E8N3uMBb6PpGE8BvI8pJQFtb51zAthnIuoAH09UBsBWyFQG+HxZ5reL+ucG2iMI0Xh/di8AAAAASUVORK5CYII=);}
 		header #ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px;white-space:pre-wrap}table.logs{border:0px;width:100%;border-spacing:0;border-collapse:collapse}table.logs td{border-bottom:1px solid #bbb;padding:0.5em;margin:0px}table.logs th{text-align:left;padding:0.2em;margin:0px}.ref{text-decoration: none;font-family: monospace;background-color: #f5f5f5;padding: 0.2em;border-radius: 4px}.nw{white-space:nowrap}.no{overflow:hidden}
 		.tag{display:inline-block;width:10px;height:20px;margin:0px 1px 0px 0px;background-color:#888;mask:url(#maskTag);-webkit-mask:url(#maskTag);-0-mask:url(#maskTag)}.tag.master{background-color:#e89128}.tag.HEAD{background-color:#7ad263}.tag.tag_{background-color:#63b4d2}
+		textarea{width:100%;height:20em}
 		"""
 		if self.use_pygments:
 			style +=  self.formatter.get_style_defs()
 		
-		return u"""<!DOCTYPE html><head><meta charset="UTF-8"><title>~{repo_name}</title>
+		return u"""<!DOCTYPE html><head><meta charset="UTF-8"><title>~{repo_name} {title}</title>
 		<style>{style}</style>
 		</head>
 		<body>
@@ -169,6 +207,7 @@ class GITServePages(object):
 		</mask></defs></svg>
 		</body>
 		""".format(
+			title=title,
 			repo_name = self.request.repo_name,
 			host = self.request.server.server_name,
 			port = self.request.server.server_port,
@@ -334,7 +373,79 @@ class GITServePages(object):
 			txt += self._hi(text, "diff.patch")
 		return (200, u"text/html", self._tpl(txt))
 
- 
+	def wiki(self, path):
+		path = path.strip("/")
+		branches = GIT.branch()
+		
+		if not self.use_md:
+			return (200, u"text/html", self._tpl("Markdown support is required to use wiki."))
+		
+		if "__wiki" not in branches :
+			return (200, u"text/html", self._tpl("To use wiki, create an empty <span class='ref'>__wiki</span> branch. <code>git checkout --orphan __wiki</code>"))
+		
+		if path=="":
+			path="home"
+		fpath=path+".md"
+		
+		if self.method=="POST":
+			text = self.post.get("text",[None])[0]
+			print (self.tmpdir)
+			if not text is None:
+				orig_branch = GIT.branch_current()
+				
+				try:
+					r = GIT._do('--work-tree='+self.tmpdir, "checkout" , "__wiki")
+				except CalledProcessError, e:
+					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+	
+				try:
+					with codecs.open( os.path.join(self.tmpdir, fpath),"w","utf-8") as f:
+						r = f.write(text.decode("utf-8"))
+				except Exception as e:
+					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  fpath)
+					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  orig_branch)
+					return (500, u"text/html", self._tpl("I'm sorry. Something went wrong saving the page. <pre>{0}</pre>".format(e.message), title="wiki"))
+
+				try:
+					r = GIT._do('--work-tree='+self.tmpdir, "add" , fpath)
+				except CalledProcessError, e:
+					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+				
+				try:
+					r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", "Modified {0}".format(path))
+				except CalledProcessError, e:
+					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+
+				try:
+					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  orig_branch)
+				except CalledProcessError as e:
+					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+
+				
+				
+				
+			return (302, '', u'/wiki/{0}'.format(path))
+		
+		
+		log = GIT.log(fpath, "__wiki",1)
+		if len(log)==0:
+			text ="_new page_"
+			log = ['','','','','']
+		else:
+			text = GIT.show(fpath, ref="__wiki")
+			log = log[0]
+
+		if "edit" in self.query:
+			text = u"""<form method='post' action='.'>
+			<textarea name='text'>{0}</textarea>
+			<div class='actions'><input type='submit' value='save'></div>
+			""".format(text)
+		else:
+			text = markdown.markdown(text)
+			text = u"<p><a href='/wiki/{0}?edit=1'>edit</a></p><div>{1}</div>".format(path, text, *log)
+			
+		return (200, u"text/html", self._tpl(text, title="wiki"))
+
 class GITRequestHandler(CGIHTTPRequestHandler):
 	def translate_path(self, path):
 		if path.startswith(self.repo_vfolder ):
@@ -350,23 +461,30 @@ class GITRequestHandler(CGIHTTPRequestHandler):
 			self.cgi_info = head, GIT_HTTP_BACKEND_NAME + "/" + tail
 		return r
 	
-	def do_GET(self):
+	def _do_pages(self):
 		r = self.pages.route(self)
 		if not r is None:
 			self.send_response(r[0])
 			if r[0]==302:
 				self.send_header('Location', r[2])
-				return
+				return True
 			self.send_header('Content-type',r[1])
 			self.send_header('Accept-Ranges', 'bytes')
 			self.send_header('Content-Length', len(r[2]))
 			self.end_headers()
 			self.wfile.write(r[2].encode("utf-8"))
-			return
-		
-		CGIHTTPRequestHandler.do_GET(self)
+			return True
+		return False
+			
+	def do_GET(self):
+		self._do_pages() or CGIHTTPRequestHandler.do_GET(self)
 
+	def do_POST(self):
+		self._do_pages()	or CGIHTTPRequestHandler.do_GET(self)		
+
+handler = None
 def start_serve(git_repo_path, port=8001):
+	global handler
 	os.environ['GIT_PROJECT_ROOT'] = git_repo_path
 	os.environ['GIT_HTTP_EXPORT_ALL'] = "1"
 	os.environ['GIT_PAGER'] = "cat"
@@ -385,12 +503,21 @@ def start_serve(git_repo_path, port=8001):
 	
 	httpd = server(server_address, handler)
 	print (
-		"""Serving git repo '{0}'
-		Web interface at http://{1}:{2}
-		print "git clone http://{1}:{2}/{0}/""".format(repo_name, httpd.server_name, httpd.server_port)
+		"""Serving git repo '{0}'\n\tWeb interface at http://{1}:{2}\n\tgit clone http://{1}:{2}/{0}/\nCTRL+C to stop.""".format(repo_name, httpd.server_name, httpd.server_port)
 	)
-	
-	httpd.serve_forever()	
+	try:
+		httpd.serve_forever()	
+	except KeyboardInterrupt:
+		pass
+
+def cleanup():
+	global handler
+	import shutil
+	if not handler is None:
+		print("cleaning up...")
+		shutil.rmtree(handler.pages.tmpdir)
+
+atexit.register(cleanup)
 
 
 if __name__=="__main__":	
@@ -400,8 +527,8 @@ if __name__=="__main__":
 	#~ pp = pprint.PrettyPrinter(indent=4)
 	#~ print = pp.pprint
 	#~ try:
-		#~ print(GIT.log(n=5))
-	#~ except CalledProcessError, e:
+		#~ print(GIT.log("home.md", "__wiki",1))
+	#~ except CalledProcessError as e:
 		#~ print(e.output)	
 	#~ sys.exit()
 	
