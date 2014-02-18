@@ -16,6 +16,7 @@ import codecs
 from subprocess import check_output,CalledProcessError
 import re
 import cgi
+import hashlib
 
 if os.name == "nt":
 	GIT_HTTP_BACKEND = "C:\\Program Files (x86)\\Git\\libexec\\git-core\\git-http-backend.exe"
@@ -45,7 +46,8 @@ class GIT:
 	@classmethod
 	def _do(cls, *cmd):
 		cmd = ['git']+list(cmd)
-		return check_output(cmd,universal_newlines=True)
+		r = check_output(cmd,universal_newlines=True).decode("utf-8")
+		return r
 	@classmethod
 	def rev_parse(cls,*args):
 		return cls._do("rev-parse", *args)
@@ -77,17 +79,17 @@ class GIT:
 		ref = _ref or cls.current_ref
 		return cls._do("show", ref+":"+file)
 	@classmethod
-	def log(cls, file="", _ref=None, n=20):
+	def log(cls, file="", _ref=None, n=40):
 		ref = _ref or cls.current_ref
-		r = cls._do("log", '-'+str(n) ,'--pretty=format:%h%x09%an%x09%ad%x09%s', ref, "--",file)
-		r = r.strip()
-		logs = [ l.strip().split("\t") for l in r.split("\n") ]
+		r = cls._do("log", '-'+str(n) ,'--pretty=format:%h|%x09|%an|%x09|%ad|%x09|%s|%x09|%ae|%x09|%d', '--date=relative', ref, "--",file)
+		r = r.strip(" \n\r")
+		logs = [ [r.strip() for r in l.strip(" ").split("|\t|")] for l in r.split("\n") ]
 		return logs
 	@classmethod
 	def diff_tree(cls,ref=None):
 		_ref = ref or cls.current_ref
 		r = cls._do("diff-tree", "--no-commit-id", "--name-status", "-r" , _ref)
-		r = [ l.strip().split("\t") for l in r.strip().split("\n") ]
+		r = [ l.strip().split("\t") for l in r.strip(" \n\r").split("\n") ]
 		return r
 	@classmethod
 	def diff(cls, path="", ref1=None, ref2=None):
@@ -146,21 +148,25 @@ class GITServePages(object):
 		return None
 	
 	def _tpl(self, text):
-		style=u"""body{padding:0px;margin:0px;font-family:sans-serif;background-color:#eee}article{width:90%;margin:0px auto}header{padding:20px 5%;background-color:#404e61;color:#fff}header>a{color:#DDD}header>a:hover{color:#fff}footer{padding:10px 5%;background-color:#152a47;color:#fff}
+		style=u"""body{padding:0px;margin:0px;font-family:sans-serif;background-color:#eee}article{width:90%;margin:0px auto}header{padding:20px 5%;background-color:#404e61;color:#fff}header>a{color:#DDD}header>a:hover{color:#fff}footer{margin:2em 0 0;padding:10px 5%;background-color:#152a47;color:#fff}
 		li.dir{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAABTVBMVEUAABRISEhJSUlGTVNMTExRUVFWVlZbW1tfX180ZaQ0ZaU0ZqQ1ZqQ1ZqU2ZqQ2ZqU2Z6U3Z6U4Z6Q3aKY4aKU5aKU6aaVlZWVBbaZqampsbGxubm5FeLJzc3N0dHR4eHh5eXl6enpQg7qAgIB4hpeMjIyNjY1tnM5unM5wns+ZmZmbm5t4o9J5pNN6pNN6pdF+ptOhoaF+p9SioqKBqNWkpKSlpaSlpaWEq9WFq9Wnp6eHrdepqamJrtiqqqqrq6uLsNiLsNmsrKytra2OstmOstqurq6Qs9qRtNqRtNuwsLCRtduStduVttyUt9yVt9yzs7OWuNy0tLSZud2Zut2but22tracut23t7e5ubm7u7u9vb2pxOLBwcDExMTFxcWxyeXHx8fJycm2zea3z+e4z+e4z+i+0um+0+m+0+q+1Oq/1OrB1erE1+vG2Ow1AMXeAAAAAXRSTlMAQObYZgAAALtJREFUGNNjYEAHigpggBCQT0qMj4sLkoMLyMZ7OdvbOampqaqqKksBBaRjneyszE1NncIio4wlgQKS0RL8IMADBJycnMIM4hG8mdnZWVlZGSCQxsXAEcCT4+np7e0DAoEp3AzsbgK5fjDgkczLwGbDlxcCAf6ujqm8DKxmgumhwb4+7i621tYOCbwMLIYiMSZ6UGAUzsvAqC1kqaEOBZoWvAxMWqIGOjCgqw9UoSKmhAAy/AzMnMiAhwEAATQqrYcDKI4AAAAASUVORK5CYII=);}
 		li.file{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAP1BMVEUAAACBgYGVlZWZmZnExMTFxcXGxsbHx8fIyMjq6urr6+vs7Ozt7eXt7ebt7e3u7u7v7+/w8PDx8fHy8vL///9IyRz5AAAAAXRSTlMAQObYZgAAAGdJREFUGNNlj0sWgCAMA0FFPtUCxfufVahQeZrlTLKIWvUUVaOvKZoBeB9CAMDcgd+M2WusgKYBMQ4Q2E8N3uMBb6PpGE8BvI8pJQFtb51zAthnIuoAH09UBsBWyFQG+HxZ5reL+ucG2iMI0Xh/di8AAAAASUVORK5CYII=);}
-		header .ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px;white-space:pre-wrap}
+		header #ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px;white-space:pre-wrap}table.logs{border:0px;width:100%;border-spacing:0;border-collapse:collapse}table.logs td{border-bottom:1px solid #bbb;padding:0.5em;margin:0px}table.logs th{text-align:left;padding:0.2em;margin:0px}.ref{text-decoration: none;font-family: monospace;background-color: #f5f5f5;padding: 0.2em;border-radius: 4px}.nw{white-space:nowrap}.no{overflow:hidden}
+		.tag{display:inline-block;width:10px;height:20px;margin:0px 1px 0px 0px;background-color:#888;mask:url(#maskTag);-webkit-mask:url(#maskTag);-0-mask:url(#maskTag)}.tag.master{background-color:#e89128}.tag.HEAD{background-color:#7ad263}.tag.tag_{background-color:#63b4d2}
 		"""
 		if self.use_pygments:
 			style +=  self.formatter.get_style_defs()
 		
-		return u"""<!DOCTYPE html><head><meta coding='utf-8'><title>~{repo_name}</title>
+		return u"""<!DOCTYPE html><head><meta charset="UTF-8"><title>~{repo_name}</title>
 		<style>{style}</style>
 		</head>
 		<body>
-		<header><strong>~{repo_name}</strong> - <a href="/">home</a> - <a href="/browse/">browse</a> - <a href="/history/">history</a><a href="/refs/" class='ref'>{ref}</a></header>
+		<header><strong>~{repo_name}</strong> - <a href="/">home</a> - <a href="/browse/">browse</a> - <a href="/history/">history</a><a href="/refs/" id='ref'>{ref}</a></header>
 		<article>{content}</article>
 		<footer>clone this repo: <code>git clone http://{host}:{port}/{repo_name}</code></footer>
+		<svg><defs><mask id="maskTag" maskUnits="objectBoundingBox">
+		<path style="fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none" d="M 6.3125 0 C 6.2098764 0.017375 6.1199182 0.0695 6.03125 0.125 C 4.9586289 0.7423 3.8462846 1.38955 2.90625 1.90625 L 0 12.8125 L 5.9375 14.40625 L 8.875 3.5 C 8.288629 2.4692 7.680842 1.43665 7.09375 0.40625 C 6.99554 0.22185 6.8427512 0.08965 6.625 0.03125 C 6.5161246 0.00225 6.4151236 -0.017375 6.3125 0 z M 5.9375 0.96875 C 6.4685738 0.96875 6.90625 1.3751761 6.90625 1.90625 C 6.90625 2.4373239 6.4685738 2.875 5.9375 2.875 C 5.4064261 2.875 4.96875 2.4373239 4.96875 1.90625 C 4.96875 1.3751761 5.4064261 0.96875 5.9375 0.96875 z "  />
+		</mask></defs></svg>
 		</body>
 		""".format(
 			repo_name = self.request.repo_name,
@@ -200,6 +206,7 @@ class GITServePages(object):
 	def refs(self):
 		if "r" in self.query:
 			GIT.current_ref = self.query['r'][0]
+			return (302, '', '/history/')
 		
 		branches = GIT.branch()
 		tags = GIT.tag()
@@ -208,7 +215,7 @@ class GITServePages(object):
 			txt += u"<h3>Branches</h3>"
 			txt += u"<ul>"
 			for k in branches:
-				txt += u"<li><a href='?r={0}'>{0}</a></li>".format(k)
+				txt += u"<li><a class='ref' href='?r={0}'>{0}</a></li>".format(k)
 			txt += u"</ul>"
 		else:
 			txt += u"<h3>No branches</h3>"
@@ -217,7 +224,7 @@ class GITServePages(object):
 			txt += u"<h3>Tags</h3>"
 			txt += u"<ul>"
 			for k in tags:
-				txt += u"<li><a href='?r={0}'>{0}</a></li>".format(k)
+				txt += u"<li><a class='ref' href='?r={0}'>{0}</a></li>".format(k)
 			txt += u"</ul>"
 		else:
 			txt += u"<h3>No tags</h3>"
@@ -252,7 +259,7 @@ class GITServePages(object):
 			logs = GIT.log(path, ref,2)[1]
 		except CalledProcessError:
 			return None
-		txt = u"<h3>{0} ({1})</h3>".format(path, ref)
+		txt = u"<h3>{0} <span class='ref'>@{1}</span></h3>".format(path, ref)
 		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: <a href='/diff/{1}?ref={2}..{0}'>previus</a> - <a href='/diff/{1}?ref={0}..HEAD'>HEAD</a></p>".format(ref,path, logs[0]) 
 		txt += self._hi(text, path)
 		
@@ -263,12 +270,20 @@ class GITServePages(object):
 			logs = GIT.log(path.strip("/"))
 		except CalledProcessError:
 			return None
-		txt_h = u"<h3>History of {1} ({0})</h3>".format(GIT.current_ref, path)
+		txt_h = u"<h3>History of {1} <span class='ref'>@{0}</span></h3>".format(GIT.current_ref, path)
+		txt_h += u"<table class='logs'>"
+		txt_h += u"<tr><th widht='20%'>author</th><th width='10%'>commit</th><th>message</th><th width='10%'>date</th></tr>"
 		for l in logs:
-			txt_h += u"<dl>"
-			txt_h += u"<dt><em><a href='/commit/{0}/'>{0}</a></em> - {1} - {2}</dt>".format(*l)
-			txt_h += u"<dd><pre>{3}</pre></dd>".format(*l)
-			txt_h += u"</dl>"
+			l[4]=hashlib.md5( l[4].lower().encode() ).hexdigest()
+			if l[5]!="":
+				l[5] = ''.join( ["<span class='tag {1}' title='{0}'></span>".format(t, t.replace(".","-").replace(":","_")) for t in l[5].strip(" ()").split(",")] )
+			txt_h += u"<tr>"
+			txt_h += u"<td class='nw'><img src='http://www.gravatar.com/avatar/{4}?s=16'> {1}</td>".format(*l)
+			txt_h += u"<td class='nw'><a class='ref' href='/commit/{0}/'>{0}</a> {5}</td>".format(*l)
+			txt_h += u"<td class='no'>{3}</td>".format(*l)
+			txt_h += u"<td class='nw'>{2}</td>".format(*l)
+			txt_h += u"</tr>"
+		txt_h += u"</table>"
 		return (200, "text/html", self._tpl(txt_h))
 		
 	def commit(self, ref):
@@ -277,9 +292,9 @@ class GITServePages(object):
 			log = GIT.log("", ref,1)[0]
 		except CalledProcessError:
 			return None
-		
-		txt = u"<h3>Commit {0}</h3>".format(ref)
-		txt += u"<p>{1} - {2}</p>".format(*log)
+		log[4]=hashlib.md5( log[4].lower().encode() ).hexdigest()
+		txt = u"<h3>Commit <span class='ref'>{0}</a></h3>".format(ref)
+		txt += u"<p><img src='http://www.gravatar.com/avatar/{4}?s=16'> {1} - {2}</p>".format(*log)
 		txt += u"<pre>{3}</pre>".format(*log)
 		txt += u"<ul>"
 		for f in files:
@@ -306,13 +321,14 @@ class GITServePages(object):
 		except CalledProcessError:
 			return None
 
-		txt = u"<h3>Diff {1}..{2} -- {0}</h3>".format( path, ref1, ref2)		
+		txt = u"<h3>Diff <span class='ref'>{1}</span>..<span class='ref'>{2}</span> -- {0}</h3>".format( path, ref1, ref2)		
 		if text is None:
 			txt += u"<p>Files are identical!</p>"
 		else:
 			for l in logs:
+				l[4]=hashlib.md5( l[4].lower().encode() ).hexdigest()
 				txt += u"<dl>"
-				txt += u"<dt><em><a href='/commit/{0}/'>{0}</a></em> - {1} - {2}</dt>".format(*l)
+				txt += u"<dt><a class='ref' href='/commit/{0}/'>{0}</a> - <img src='http://www.gravatar.com/avatar/{4}?s=16'>  {1} - {2}</dt>".format(*l)
 				txt += u"<dd><pre>{3}</pre></dd>".format(*l)
 				txt += u"</dl>"
 			txt += self._hi(text, "diff.patch")
@@ -338,6 +354,9 @@ class GITRequestHandler(CGIHTTPRequestHandler):
 		r = self.pages.route(self)
 		if not r is None:
 			self.send_response(r[0])
+			if r[0]==302:
+				self.send_header('Location', r[2])
+				return
 			self.send_header('Content-type',r[1])
 			self.send_header('Accept-Ranges', 'bytes')
 			self.send_header('Content-Length', len(r[2]))
@@ -376,8 +395,12 @@ def start_serve(git_repo_path, port=8001):
 
 if __name__=="__main__":	
 	import sys
+	
+	#~ import pprint
+	#~ pp = pprint.PrettyPrinter(indent=4)
+	#~ print = pp.pprint
 	#~ try:
-		#~ print(GIT.diff())
+		#~ print(GIT.log(n=5))
 	#~ except CalledProcessError, e:
 		#~ print(e.output)	
 	#~ sys.exit()
@@ -391,7 +414,6 @@ if __name__=="__main__":
 	except CalledProcessError as e:
 		print(e.output)
 		sys.exit(e.returncode)
-	print(repo_path)
 	repo_path = repo_path.replace("/",os.path.sep).strip()
 
 	start_serve(repo_path, port)
