@@ -48,7 +48,7 @@ class GIT:
 	@classmethod
 	def _do(cls, *cmd):
 		cmd = ['git']+list(cmd)
-		r = check_output(cmd,universal_newlines=True).decode("utf-8")
+		r = check_output(cmd,universal_newlines=True)
 		return r
 	@classmethod
 	def rev_parse(cls,*args):
@@ -189,8 +189,8 @@ class GITServePages(object):
 		li.dir{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAABTVBMVEUAABRISEhJSUlGTVNMTExRUVFWVlZbW1tfX180ZaQ0ZaU0ZqQ1ZqQ1ZqU2ZqQ2ZqU2Z6U3Z6U4Z6Q3aKY4aKU5aKU6aaVlZWVBbaZqampsbGxubm5FeLJzc3N0dHR4eHh5eXl6enpQg7qAgIB4hpeMjIyNjY1tnM5unM5wns+ZmZmbm5t4o9J5pNN6pNN6pdF+ptOhoaF+p9SioqKBqNWkpKSlpaSlpaWEq9WFq9Wnp6eHrdepqamJrtiqqqqrq6uLsNiLsNmsrKytra2OstmOstqurq6Qs9qRtNqRtNuwsLCRtduStduVttyUt9yVt9yzs7OWuNy0tLSZud2Zut2but22tracut23t7e5ubm7u7u9vb2pxOLBwcDExMTFxcWxyeXHx8fJycm2zea3z+e4z+e4z+i+0um+0+m+0+q+1Oq/1OrB1erE1+vG2Ow1AMXeAAAAAXRSTlMAQObYZgAAALtJREFUGNNjYEAHigpggBCQT0qMj4sLkoMLyMZ7OdvbOampqaqqKksBBaRjneyszE1NncIio4wlgQKS0RL8IMADBJycnMIM4hG8mdnZWVlZGSCQxsXAEcCT4+np7e0DAoEp3AzsbgK5fjDgkczLwGbDlxcCAf6ujqm8DKxmgumhwb4+7i621tYOCbwMLIYiMSZ6UGAUzsvAqC1kqaEOBZoWvAxMWqIGOjCgqw9UoSKmhAAy/AzMnMiAhwEAATQqrYcDKI4AAAAASUVORK5CYII=);}
 		li.file{list-style-image:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAP1BMVEUAAACBgYGVlZWZmZnExMTFxcXGxsbHx8fIyMjq6urr6+vs7Ozt7eXt7ebt7e3u7u7v7+/w8PDx8fHy8vL///9IyRz5AAAAAXRSTlMAQObYZgAAAGdJREFUGNNlj0sWgCAMA0FFPtUCxfufVahQeZrlTLKIWvUUVaOvKZoBeB9CAMDcgd+M2WusgKYBMQ4Q2E8N3uMBb6PpGE8BvI8pJQFtb51zAthnIuoAH09UBsBWyFQG+HxZ5reL+ucG2iMI0Xh/di8AAAAASUVORK5CYII=);}
 		header #ref{float:right}pre{border:1px solid #AAA;background-color:#fff;padding: 1em;border-radius:5px;white-space:pre-wrap}table.logs{border:0px;width:100%;border-spacing:0;border-collapse:collapse}table.logs td{border-bottom:1px solid #bbb;padding:0.5em;margin:0px}table.logs th{text-align:left;padding:0.2em;margin:0px}.ref{text-decoration: none;font-family: monospace;background-color: #f5f5f5;padding: 0.2em;border-radius: 4px}.nw{white-space:nowrap}.no{overflow:hidden}
-		.tag{display:inline-block;width:10px;height:20px;margin:0px 1px 0px 0px;background-color:#888;mask:url(#maskTag);-webkit-mask:url(#maskTag);-0-mask:url(#maskTag)}.tag.master{background-color:#e89128}.tag.HEAD{background-color:#7ad263}.tag.tag_{background-color:#63b4d2}
-		textarea{width:100%;height:20em}
+		.tag{display:inline-block;width:10px;height:20px;margin:0px 1px 0px 0px;background-color:#888;mask:url(#maskTag);-webkit-mask:url(#maskTag);-o-mask:url(#maskTag)}.tag.master{background-color:#e89128}.tag.HEAD{background-color:#7ad263}.tag.tag_{background-color:#63b4d2}
+		textarea{width:100%;height:20em}.actions{padding:0.2em;background-color:#ccc;margin-top:1em;text-align:right}
 		"""
 		if self.use_pygments:
 			style +=  self.formatter.get_style_defs()
@@ -220,11 +220,11 @@ class GITServePages(object):
 		fname = os.path.basename(path)
 		if not self.use_pygments:
 			return u"<pre>"+cgi.escape(text)+"</pre>"
-		#~ try:
-		lexer = get_lexer_for_filename(fname, text)
-		return highlight(text, lexer, self.formatter)
-		#~ except Exception:
-			#~ return text
+		try:
+			lexer = get_lexer_for_filename(fname, text)
+			return highlight(text, lexer, self.formatter)
+		except Exception:
+			return u"<pre>"+cgi.escape(text)+"</pre>"
 	
 	def index(self):
 		for fname in ('README.md', 'README', 'README.txt'):
@@ -295,11 +295,14 @@ class GITServePages(object):
 		path = path.strip(u"/")
 		try:
 			text = GIT.show(path, ref)
-			logs = GIT.log(path, ref,2)[1]
+			logs = GIT.log(path, ref,2)[-1]
 		except CalledProcessError:
 			return None
 		txt = u"<h3>{0} <span class='ref'>@{1}</span></h3>".format(path, ref)
-		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: <a href='/diff/{1}?ref={2}..{0}'>previus</a> - <a href='/diff/{1}?ref={0}..HEAD'>HEAD</a></p>".format(ref,path, logs[0]) 
+		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: ".format(ref,path, logs[0])
+		if ref!= logs[0]:
+			txt += u"<a href='/diff/{1}?ref1={2}..{0}'>previus</a> - ".format(ref,path, logs[0])
+		txt += u"<a href='/diff/{1}?ref={0}..HEAD'>HEAD</a></p>".format(ref,path, logs[0])
 		txt += self._hi(text, path)
 		
 		return (200, "text/html", self._tpl(txt))
@@ -310,19 +313,29 @@ class GITServePages(object):
 		except CalledProcessError:
 			return None
 		txt_h = u"<h3>History of {1} <span class='ref'>@{0}</span></h3>".format(GIT.current_ref, path)
+		txt_h += u"<form action='/diff/{0}' method='get'>".format(path)
 		txt_h += u"<table class='logs'>"
-		txt_h += u"<tr><th widht='20%'>author</th><th width='10%'>commit</th><th>message</th><th width='10%'>date</th></tr>"
+		txt_h += u"<tr><th widht='20%'>author</th><th width='10%'>commit</th><th>message</th><th width='10%'>date</th>"
+		if path!="/":
+			txt_h += u"<th width='10%'>diff</th></tr>"
 		for l in logs:
 			l[4]=hashlib.md5( l[4].lower().encode() ).hexdigest()
 			if l[5]!="":
 				l[5] = ''.join( ["<span class='tag {1}' title='{0}'></span>".format(t, t.replace(".","-").replace(":","_")) for t in l[5].strip(" ()").split(",")] )
 			txt_h += u"<tr>"
-			txt_h += u"<td class='nw'><img src='http://www.gravatar.com/avatar/{4}?s=16'> {1}</td>".format(*l)
+			txt_h += u"<td class='nw'><img src='http://www.gravatar.com/avatar/{4}?s=16' width='16' height='16'> {1}</td>".format(*l)
 			txt_h += u"<td class='nw'><a class='ref' href='/commit/{0}/'>{0}</a> {5}</td>".format(*l)
 			txt_h += u"<td class='no'>{3}</td>".format(*l)
 			txt_h += u"<td class='nw'>{2}</td>".format(*l)
+			if path!="/":
+				txt_h += u"<td class='nw'><input type='radio' name='ref1' value='{0}'>".format(*l)
+				txt_h += u"<input type='radio' name='ref2' value='{0}'></td>".format(*l)
 			txt_h += u"</tr>"
 		txt_h += u"</table>"
+		if path!="/":
+			txt_h += u"<div class='actions'><input type='submit' value='diff'></div>"
+		txt_h += u"</form>"
+		
 		return (200, "text/html", self._tpl(txt_h))
 		
 	def commit(self, ref):
@@ -343,11 +356,13 @@ class GITServePages(object):
 
 	def diff(self,path):
 		ref = self.query.get("ref", [None])[0]
-		if ".." in ref:
+		if not ref is None and ".." in ref:
 			ref1, ref2 = ref.split("..")
 		else:
 			ref1, ref2 = ref, None
-			
+		ref1 = self.query.get("ref1", [ref1])[0]
+		ref2 = self.query.get("ref2", [ref2])[0]
+		
 		ref1 = ref1 or GIT.current_ref
 		ref2 = ref2 or ref1+"~1"		
 		
@@ -395,7 +410,7 @@ class GITServePages(object):
 				
 				try:
 					r = GIT._do('--work-tree='+self.tmpdir, "checkout" , "__wiki")
-				except CalledProcessError, e:
+				except CalledProcessError as e:
 					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 	
 				try:
@@ -408,12 +423,12 @@ class GITServePages(object):
 
 				try:
 					r = GIT._do('--work-tree='+self.tmpdir, "add" , fpath)
-				except CalledProcessError, e:
+				except CalledProcessError as e:
 					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 				
 				try:
 					r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", "Modified {0}".format(path))
-				except CalledProcessError, e:
+				except CalledProcessError as e:
 					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 
 				try:
