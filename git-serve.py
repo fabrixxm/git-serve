@@ -12,6 +12,7 @@ except ImportError:
 
 #import cgitb; cgitb.enable()  ## This line enables CGI error reporting
 import os
+import sys
 import codecs
 from subprocess import check_output,CalledProcessError
 import re
@@ -19,6 +20,7 @@ import cgi
 import hashlib
 import tempfile
 import atexit
+import traceback
 
 if os.name == "nt":
 	GIT_HTTP_BACKEND = "C:\\Program Files (x86)\\Git\\libexec\\git-core\\git-http-backend.exe"
@@ -199,7 +201,7 @@ class GITServePages(object):
 		<style>{style}</style>
 		</head>
 		<body>
-		<header><strong>~{repo_name}</strong> - <a href="/">home</a> - <a href="/browse/">browse</a> - <a href="/history/">history</a><a href="/refs/" id='ref'>{ref}</a></header>
+		<header><strong>~{repo_name}</strong> - <a href="/">home</a> - <a href="/browse/">browse</a> - <a href="/history/">history</a> - <a href="/wiki/">wiki</a><a href="/refs/" id='ref'>{ref}</a></header>
 		<article>{content}</article>
 		<footer>clone this repo: <code>git clone http://{host}:{port}/{repo_name}</code></footer>
 		<svg><defs><mask id="maskTag" maskUnits="objectBoundingBox">
@@ -380,8 +382,16 @@ class GITServePages(object):
 		if not self.use_md:
 			return (200, u"text/html", self._tpl("Markdown support is required to use wiki."))
 		
+		create = False
 		if "__wiki" not in branches :
-			return (200, u"text/html", self._tpl("To use wiki, create an empty <span class='ref'>__wiki</span> branch. <code>git checkout --orphan __wiki</code>"))
+			if self.method=="POST":
+				create = int(self.post.get('create',['0'])[0]) == 1
+				# to create a wiki, we need to create an empty branch called "__wiki" and add commit to it
+				# we add an empty home.md file
+				self.post['text']=["",]
+				path="home"
+			else:
+				return (200, u"text/html", self._tpl("<form method='POST'><button name='create' value='1' style='font-size:1.2em;padding:0.2em 1em;'>Create the wiki</button></form><b>WARNING!</b> Wiki function is experimental!"))
 		
 		if path=="":
 			path="home"
@@ -389,32 +399,52 @@ class GITServePages(object):
 		
 		if self.method=="POST":
 			text = self.post.get("text",[None])[0]
-			print (self.tmpdir)
+			action = self.post.get("action",["save"])[0]
+
 			if not text is None:
 				orig_branch = GIT.branch_current()
 				
 				try:
-					r = GIT._do('--work-tree='+self.tmpdir, "checkout" , "__wiki")
+					if create:
+						r = GIT._do('--work-tree='+self.tmpdir, "checkout" , "--orphan", "__wiki")
+					else:
+						r = GIT._do('--work-tree='+self.tmpdir, "checkout" , "__wiki")
 				except CalledProcessError, e:
 					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 	
-				try:
-					with codecs.open( os.path.join(self.tmpdir, fpath),"w","utf-8") as f:
-						r = f.write(text.decode("utf-8"))
-				except Exception as e:
-					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  fpath)
-					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  orig_branch)
-					return (500, u"text/html", self._tpl("I'm sorry. Something went wrong saving the page. <pre>{0}</pre>".format(e.message), title="wiki"))
+				if action=="save":
+					try:
+						with codecs.open( os.path.join(self.tmpdir, fpath),"w","utf-8") as f:
+							r = f.write(text.decode("utf-8"))
+					except Exception as e:
+						r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  fpath)
+						r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  orig_branch)
+						return (500, u"text/html", self._tpl("I'm sorry. Something went wrong saving the page. <pre>{0}</pre>".format(e.message), title="wiki"))
 
-				try:
-					r = GIT._do('--work-tree='+self.tmpdir, "add" , fpath)
-				except CalledProcessError, e:
-					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
-				
-				try:
-					r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", "Modified {0}".format(path))
-				except CalledProcessError, e:
-					return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+					try:
+						r = GIT._do('--work-tree='+self.tmpdir, "add" , fpath)
+					except CalledProcessError, e:
+						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+					
+					try:
+						if create:
+							msg = "Created new wiki"
+						else:
+							msg = "Modified {0}".format(path)
+						r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", msg)
+					except CalledProcessError, e:
+						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+				elif action=="delete":
+					try:
+						r = GIT._do('--work-tree='+self.tmpdir, "rm" , fpath)
+					except CalledProcessError, e:
+						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
+					try:
+						r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", "Deleted {0}".format(path))
+					except CalledProcessError, e:
+						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))	
+					
+					path = home
 
 				try:
 					r = GIT._do('--work-tree='+self.tmpdir, "checkout" ,  orig_branch)
@@ -432,17 +462,26 @@ class GITServePages(object):
 			text ="_new page_"
 			log = ['','','','','']
 		else:
-			text = GIT.show(fpath, ref="__wiki")
-			log = log[0]
+			try:
+				text = GIT.show(fpath, ref="__wiki")
+			except CalledProcessError as e:
+				if e.returncode==128:
+					text ="_new page_"
+					log = ['','','','','']
+				else:
+					raise e
+			else:
+				log = log[0]
 
 		if "edit" in self.query:
-			text = u"""<form method='post' action='.'>
+			text = u"""<form method='post'>
 			<textarea name='text'>{0}</textarea>
-			<div class='actions'><input type='submit' value='save'></div>
+			<div class='actions'><input type='submit' name='action' value='save'><input type='submit' name='action' value='delete'></div>
 			""".format(text)
 		else:
 			text = markdown.markdown(text)
-			text = u"<p><a href='/wiki/{0}?edit=1'>edit</a></p><div>{1}</div>".format(path, text, *log)
+			print(log)
+			text = u"<p><b>{0}</b> <small><a class='ref' href='/commit/{2}/'>{2}</a> {4} by {3} - <a href='/wiki/{0}?edit=1'>edit</a></small></p><div>{1}</div>".format(path, text, *log)
 			
 		return (200, u"text/html", self._tpl(text, title="wiki"))
 
@@ -462,7 +501,12 @@ class GITRequestHandler(CGIHTTPRequestHandler):
 		return r
 	
 	def _do_pages(self):
-		r = self.pages.route(self)
+		try:
+			r = self.pages.route(self)
+		except Exception as e:
+			tb = "".join( traceback.format_exception(*sys.exc_info()) )
+			errmsg = u"<!DOCTYPE html><style>body{{font-family:sans-serif;background-color:#EEE;color:#888;}}</style><body><h1>Server Error</h1><pre>{}</pre>".format(tb)
+			r = (500, "text/html", errmsg)
 		if not r is None:
 			self.send_response(r[0])
 			if r[0]==302:
@@ -544,5 +588,6 @@ if __name__=="__main__":
 	repo_path = repo_path.replace("/",os.path.sep).strip()
 
 	start_serve(repo_path, port)
+		
 	
 	
