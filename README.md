@@ -29,9 +29,17 @@ On windows use PyInstaller to make a one-file executable, then copy it on PATH
 
 ### Use
 
-    git serve [port]
+	git-serve.py [-h] [--no-gravatar] [port]
 
-`port` defaults to 8001
+	Serve current git repo via web
+
+	positional arguments:
+	  port           webserver port (default: 8001)
+
+	optional arguments:
+	  -h, --help     show this help message and exit
+	  --no-gravatar  disable commit avatars
+
     
 The current repo will be avaiable at `http://[your ip]:[port]/`
 

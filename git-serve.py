@@ -120,7 +120,7 @@ class GIT:
 		
 
 class GITServePages(object):
-	def __init__(self):
+	def __init__(self, options):
 		self.use_md = not markdown is None
 		self.use_pygments = not highlight is None
 		if self.use_md:
@@ -132,6 +132,8 @@ class GITServePages(object):
 		else:
 			print("[ ] pygments ", end=" ")
 		print()
+		
+		self.use_gravatar = not options['nogravatar']
 		
 		if self.use_pygments:
 			self.formatter = HtmlFormatter(linenos=False, cssclass="source")
@@ -325,7 +327,10 @@ class GITServePages(object):
 			if l[5]!="":
 				l[5] = ''.join( ["<span class='tag {1}' title='{0}'></span>".format(t, t.replace(".","-").replace(":","_")) for t in l[5].strip(" ()").split(",")] )
 			txt_h += u"<tr>"
-			txt_h += u"<td class='nw'><img src='http://www.gravatar.com/avatar/{4}?s=16' width='16' height='16'> {1}</td>".format(*l)
+			txt_h += u"<td class='nw'>"
+			if self.use_gravatar:
+				txt_h += u"<img src='http://www.gravatar.com/avatar/{4}?s=16' width='16' height='16'>"
+			txt_h += " {1}</td>".format(*l)
 			txt_h += u"<td class='nw'><a class='ref' href='/commit/{0}/'>{0}</a> {5}</td>".format(*l)
 			txt_h += u"<td class='no'>{3}</td>".format(*l)
 			txt_h += u"<td class='nw'>{2}</td>".format(*l)
@@ -438,7 +443,7 @@ class GITServePages(object):
 
 					try:
 						r = GIT._do('--work-tree='+self.tmpdir, "add" , fpath)
-					except CalledProcessError, e:
+					except CalledProcessError as e:
 						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 					
 					try:
@@ -447,16 +452,16 @@ class GITServePages(object):
 						else:
 							msg = "Modified {0}".format(path)
 						r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", msg)
-					except CalledProcessError, e:
+					except CalledProcessError as e:
 						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 				elif action=="delete":
 					try:
 						r = GIT._do('--work-tree='+self.tmpdir, "rm" , fpath)
-					except CalledProcessError, e:
+					except CalledProcessError as e:
 						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))
 					try:
 						r = GIT._do('--work-tree='+self.tmpdir, "commit" , "-m", "Deleted {0}".format(path))
-					except CalledProcessError, e:
+					except CalledProcessError as e:
 						return (500, u"text/html", self._tpl("<pre>{0}</pre>".format(e.output), title="wiki"))	
 					
 					path = home
@@ -542,7 +547,7 @@ class GITRequestHandler(CGIHTTPRequestHandler):
 		self._do_pages()	or CGIHTTPRequestHandler.do_GET(self)		
 
 handler = None
-def start_serve(git_repo_path, port=8001):
+def start_serve(git_repo_path, port=8001, options={}):
 	global handler
 	os.environ['GIT_PROJECT_ROOT'] = git_repo_path
 	os.environ['GIT_HTTP_EXPORT_ALL'] = "1"
@@ -558,7 +563,8 @@ def start_serve(git_repo_path, port=8001):
 	handler.repo_name = repo_name
 	handler.repo_vfolder = "/"+repo_name
 	handler.cgi_directories = ["/"+repo_name]
-	handler.pages = GITServePages()
+	handler.pages = GITServePages(options)
+	
 	
 	httpd = server(server_address, handler)
 	print (
@@ -581,6 +587,16 @@ atexit.register(cleanup)
 
 if __name__=="__main__":	
 	import sys
+	import argparse
+
+	parser = argparse.ArgumentParser(description='Serve current git repo via web')
+	parser.add_argument('port', metavar='port', type=int, default=8001, nargs='?',
+		               help='webserver port (default: 8001)')
+	parser.add_argument('--no-gravatar', dest='nogravatar', action='store_true',
+		               default=False,
+		               help='disable commit avatars')
+
+	args = parser.parse_args()
 	
 	#~ import pprint
 	#~ pp = pprint.PrettyPrinter(indent=4)
@@ -591,9 +607,7 @@ if __name__=="__main__":
 		#~ print(e.output)	
 	#~ sys.exit()
 	
-	port = 8001
-	if len(sys.argv)>1 and sys.argv[1].isdigit():
-		port = int(sys.argv[1])
+	port = int(args.port)
 	
 	try:
 		repo_path = GIT.rev_parse("--show-toplevel")
@@ -602,7 +616,7 @@ if __name__=="__main__":
 		sys.exit(e.returncode)
 	repo_path = repo_path.replace("/",os.path.sep).strip()
 
-	start_serve(repo_path, port)
+	start_serve(repo_path, port, {'nogravatar':args.nogravatar})
 		
 	
 	
