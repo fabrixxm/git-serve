@@ -69,7 +69,9 @@ class GIT:
 		r = cls._do("tag", *args).strip()
 		return [b.strip("\n\r *") for b in r.split("\n") if b.strip("\n\r *")!=""]
 	@classmethod
-	def files(cls, base="", ref=None):
+	def files(cls, base=".", ref=None):
+		if base == "":
+			base = "."
 		ref = ref or cls.current_ref
 		files = cls._do("ls-tree", "--name-only", ref, base).strip()
 		dirs = cls._do("ls-tree", "-d","--name-only", ref, base).strip()
@@ -89,6 +91,8 @@ class GIT:
 		return cls._do("show", ref+":"+file)
 	@classmethod
 	def log(cls, file="", ref=None, n=40):
+		if file == "":
+			file = "."
 		ref = ref or cls.current_ref
 		r = cls._do("log", '-'+str(n) ,'--pretty=format:%h|%x09|%an|%x09|%ad|%x09|%s|%x09|%ae|%x09|%d', '--date=relative', ref, "--",file)
 		r = r.strip(" \n\r")
@@ -106,6 +110,8 @@ class GIT:
 		return r
 	@classmethod
 	def diff(cls, path="", ref1=None, ref2=None):
+		if path == "":
+			path = "."
 		ref1 = ref1 or cls.current_ref
 		ref2 = ref2 or ref1+"~1"
 		r = cls._do("diff", ref1, ref2, "--", path)
@@ -305,8 +311,8 @@ class GITServePages(object):
 		txt = u"<h3>{0} <span class='ref'>@{1}</span></h3>".format(path, ref)
 		txt += u"<p><a href='/history/{1}'>History</a> - Show diff: ".format(ref,path, logs[0])
 		if ref!= logs[0]:
-			txt += u"<a href='/diff/{1}?ref1={2}..{0}'>previus</a> - ".format(ref,path, logs[0])
 		txt += u"<a href='/diff/{1}?ref={0}..HEAD'>HEAD</a></p>".format(ref,path, logs[0])
+			txt += "<a href='/diff/{1}?ref={2}..{0}'>previus</a> - ".format(ref,path, logs[0])
 		txt += self._hi(text, path)
 		
 		return (200, "text/html", self._tpl(txt))
@@ -531,7 +537,7 @@ class GITRequestHandler(CGIHTTPRequestHandler):
 			self.send_response(r[0])
 			if r[0]==302:
 				self.send_header('Location', r[2])
-				return True
+				return False
 			self.send_header('Content-type',r[1])
 			self.send_header('Accept-Ranges', 'bytes')
 			self.send_header('Content-Length', len(r[2]))
