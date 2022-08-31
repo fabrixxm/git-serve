@@ -494,8 +494,8 @@ class GITServePages(object):
 			txt_h += "<td class='nw'>{2}</td>".format(*l)
 			
 			if path != "/":
-				txt_h += "<td class='nw'><input type='radio' name='ref1' value='{0}'>".format(*l)
-				txt_h += "<input type='radio' name='ref2' value='{0}'></td>".format(*l)
+				txt_h += "<td class='nw'><input type='radio' name='ref2' value='{0}'>".format(*l)
+				txt_h += "<input type='radio' name='ref1' value='{0}'></td>".format(*l)
 				
 			txt_h += "</tr>"
 		txt_h += "</table>"
