@@ -694,8 +694,8 @@ class GITServePages(object):
 		else:
 			text = markdown.markdown(text)
 			logtext = ""
-			if log[3] != '':
-				logtext = "<a class='ref' href='/commit/{0}/'>{2}</a> {4} by {3} - <a href='/history/{fpath}?ref=__wiki'>history</a> - ".format(*log, fpath=fpath)
+			if log[0] != '':
+				logtext = "<a class='ref' href='/commit/{0}/'>{2}</a> by {1} - <a href='/history/{fpath}?ref=__wiki'>history</a> - ".format(*log, fpath=fpath)
 			text = f"""
 				<header>
 					<h3>{path}</h3> 
