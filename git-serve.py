@@ -457,14 +457,15 @@ class GITServePages(object):
 		return (200, "text/html", self._tpl(txt))
 	
 	def history(self, path):
+		ref = self.query.get("ref", [None])[0]
 		try:
-			logs = GIT.log(path.strip("/"))
+			logs = GIT.log(path.strip("/"), ref=ref)
 		except CalledProcessError:
 			logger.exception("git command error")
 			return None
 		
-		txt_h = "<h3>History of {1} <span class='ref'>@{0}</span></h3>".format(GIT.current_ref, path)
-		txt_h += "<form action='/diff/{0}' method='get'>".format(path)
+		txt_h = f"<h3>History of {path} <span class='ref'>@{ref}</span></h3>"
+		txt_h += f"<form action='/diff/{path}' method='get'>"
 		txt_h += "<table class='logs'>"
 		txt_h += "<tr><th widht='20%'>author</th><th width='10%'>commit</th><th>message</th><th width='10%'>date</th>"
 		
@@ -694,7 +695,7 @@ class GITServePages(object):
 			text = markdown.markdown(text)
 			logtext = ""
 			if log[3] != '':
-				logtext = "<a class='ref' href='/commit/{0}/'>{2}</a> {4} by {3} - ".format(*log)
+				logtext = "<a class='ref' href='/commit/{0}/'>{2}</a> {4} by {3} - <a href='/history/{fpath}?ref=__wiki'>history</a> - ".format(*log, fpath=fpath)
 			text = f"""
 				<header>
 					<h3>{path}</h3> 
